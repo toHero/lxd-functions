@@ -33,6 +33,10 @@ _getUidGidLxd() {
         echo "The user $1 was found and will be used to make the uig/gid mapping."
         UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/$1 | awk '{print $3}'`
         GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/$1 | awk '{print $4}'`
+    elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/tohero" ]; then
+        echo "The user tohero was found and will be used to make the uig/gid mapping."
+        UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/tohero | awk '{print $3}'`
+        GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/tohero | awk '{print $4}'`
     elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/ubuntu" ]; then
         echo "The user ubuntu was found and will be used to make the uig/gid mapping."
         UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/ubuntu | awk '{print $3}'`
