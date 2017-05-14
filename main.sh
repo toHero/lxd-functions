@@ -14,37 +14,45 @@ PATH_SCRIPT=$(cd $PATH_SCRIPT && pwd)
 
 # POSIX confirm
 _confirm() {
-	echo -n $1 " (y/n)? "
-	old_stty_cfg=$(stty -g)
-	stty raw -echo
-	answer=$( while ! head -c 1 | grep -i '[ny]' ;do true ;done )
-	stty $old_stty_cfg
-	echo
-	if echo "$answer" | grep -iq "^y" ;then
-	    ${@:2}
-	else
-	    exit 1
-	fi
+    echo -n $1 " ? [y/n]"
+    old_stty_cfg=$(stty -g)
+    stty raw -echo
+    answer=$( while ! head -c 1 | grep -i '[ny]' ;do true ;done )
+    stty $old_stty_cfg
+    echo
+    if echo "$answer" | grep -iq "^y" ;then
+        ${@:2} && return 0
+    fi
+        return 1
 }
 
 # Get the UID and the GID of the current user in the container (or root by default)
 _getUidGidLxd() {
-    if [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/$1" ]; then
-        echo "The user $1 was found and will be used to make the uig/gid mapping."
-        UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/$1 | awk '{print $3}'`
-        GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/$1 | awk '{print $4}'`
-    elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/tohero" ]; then
-        echo "The user tohero was found and will be used to make the uig/gid mapping."
-        UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/tohero | awk '{print $3}'`
-        GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/tohero | awk '{print $4}'`
-    elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/ubuntu" ]; then
-        echo "The user ubuntu was found and will be used to make the uig/gid mapping."
-        UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/ubuntu | awk '{print $3}'`
-        GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/ubuntu | awk '{print $4}'`
+    if [ -d "${LXD_SOURCE_DIR}/$1/rootfs" ] && [ -x "${LXD_SOURCE_DIR}/$1/rootfs" ]; then
+        if [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/$1" ]; then
+            echo "The user $1 was found and will be used to make the uig/gid mapping."
+            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/$1 | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/$1 | awk '{print $4}'`
+        elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/tohero" ]; then
+            echo "The user tohero was found and will be used to make the uig/gid mapping."
+            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/tohero | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/tohero | awk '{print $4}'`
+        elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/home/ubuntu" ]; then
+            echo "The user ubuntu was found and will be used to make the uig/gid mapping."
+            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/ubuntu | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/ubuntu | awk '{print $4}'`
+        elif [ -d "$LXD_SOURCE_DIR/$1/rootfs/root" ]; then
+            echo "No unprivileged user was found, therefore the mapping will use the root user."
+            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $4}'`
+        else
+            echo "Unable to found a user in the container (${1}, ubuntu or root)"
+            return 1
+        fi
+        return 0
     else
-        echo "No unprivileged user was found, therefore the mapping will use the root user."
-        UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $3}'`
-        GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $4}'`
+        echo "Unable to access to the rootfs of the container: ${LXD_SOURCE_DIR}/$1/rootfs"
+        return 1
     fi
 }
 
@@ -52,7 +60,7 @@ _getUidGidLxd() {
 lxd-bindfs-umount() {
     if [ -z "$1" ]; then
         echo "lxd-bindfs-umount <container name>"
-    elif [ "$(ls -A ${LXD_MOUNT_DIR}/$1 )" ]; then
+    elif [ -d "${LXD_MOUNT_DIR}/$1" ] && [ -x "${LXD_MOUNT_DIR}/$1" ] && [ "$(ls -A ${LXD_MOUNT_DIR}/$1 )" ]; then
         sudo umount ${LXD_MOUNT_DIR}/$1 && echo "Umount done (in ${LXD_MOUNT_DIR}/$1)"
     fi
 }
@@ -61,6 +69,9 @@ lxd-bindfs-umount() {
 lxd-bindfs-mount() {
     if [ $# -ne 5 ]; then
         echo "lxd-bindfs-mount <container name> <host user> <host group> <guest user> <guest group>"
+    elif [ ! -d "${LXD_MOUNT_DIR}/$1" ] || [ ! -x "${LXD_MOUNT_DIR}/$1" ]; then
+        echo "Unable to access to the directory: ${LXD_MOUNT_DIR}/$1"
+        echo "Directory exist ?"
     elif [ "$(ls -A ${LXD_MOUNT_DIR}/$1 )" ]; then
         echo "The mount directory is not empty : $LXD_MOUNT_DIR/$1"
         echo "Already mounted ?"
@@ -74,17 +85,21 @@ lxd-stop() {
     if [ -z "$1" ]; then
         echo "lxd-stop <container name>"
     else
-        if [[ `lxc info $1 | egrep -i "^Status: " | cut -d" " -f2` = 'Running' ]]; then
-            if lxc stop $1 --timeout 30; then
-                echo "LXD $1 stopped"
-            else
-                lxc stop $1 --force && echo "LXD $1 stopped, but forced !"
+        if [ `lxc list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
+            if [ `lxc info $1 | egrep -i "^Status: " | cut -d" " -f2` == 'Running' ]; then
+                if lxc stop $1 --timeout 30; then
+                    echo "LXD $1 stopped"
+                else
+                    lxc stop $1 --force && echo "LXD $1 stopped, but forced!"
+                fi
             fi
-        fi
 
-        if [ "$(ls -A ${LXD_MOUNT_DIR}/$1 )" ]; then
-            lxd-bindfs-umount $1
-        fi
+            if [ "$(ls -A ${LXD_MOUNT_DIR}/$1 )" ]; then
+                lxd-bindfs-umount $1
+            fi
+         else
+            echo "No container named $1 found"
+         fi
     fi
 }
 
@@ -93,15 +108,22 @@ lxd-start() {
     if [ -z "$1" ]; then
         echo "lxd-start <container name>"
     else
-        if [[ `lxc info $1 | egrep -i "^Status: " | cut -d" " -f2` = 'Stopped' ]]; then
-            lxc start $1 && echo "LXD $1 started"
+        if [ `lxc list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
+            if [ `lxc info $1 | egrep -i "^Status: " | cut -d" " -f2` == "Stopped" ]; then
+                lxc start $1 && echo "LXD $1 started"
+            fi
+            MOUNT_RESULT=0
+            if [ ! -d "${LXD_MOUNT_DIR}/$1" ]; then
+                echo "No destination directory to mount the container : ${LXD_MOUNT_DIR}/$1"
+                _confirm "Do you wish to create this directory" sudo mkdir -p ${LXD_MOUNT_DIR}/$1
+                MOUNT_RESULT=$?
+            fi
+            if [ ${MOUNT_RESULT} -eq 0 ]; then
+                _getUidGidLxd $1 && lxd-bindfs-mount $1 ${USER_HOST_MOUNT} ${GROUP_HOST_MOUNT} ${UID_GUEST_MOUNT} ${GID_GUEST_MOUNT}
+            fi
+        else
+            echo "No container named $1 found"
         fi
-        if [ ! -d "${LXD_MOUNT_DIR}/$1" ]; then
-            echo "No destination directory to mount the container : ${LXD_MOUNT_DIR}/$1"
-	    _confirm "Do you wish to create this directory ?" sudo mkdir -p ${LXD_MOUNT_DIR}/$1
-        fi
-    _getUidGidLxd $1 && \
-        lxd-bindfs-mount $1 ${USER_HOST_MOUNT} ${GROUP_HOST_MOUNT} ${UID_GUEST_MOUNT} ${GID_GUEST_MOUNT}
     fi
 }
 
@@ -123,16 +145,16 @@ lxd-create() {
 
 _lxdListComplete()
 {
-    if [ -r ${LXD_SOURCE_DIR} ]; then
+    if [ -d "${LXD_SOURCE_DIR}" ] && [ -x "${LXD_SOURCE_DIR}" ]; then
         local cur=${COMP_WORDS[COMP_CWORD]}
-        COMPREPLY=( $(compgen -W "$(cd ${LXD_SOURCE_DIR} && ls -d */ | tr '/\n' ' ' && printf '\n' )" -- ${cur}) )
+        COMPREPLY=( $(compgen -W "$(cd ${LXD_SOURCE_DIR} && ls -d */ 2>/dev/null | tr '/\n' ' ' && printf '\n' )" -- ${cur}) )
     fi
 }
 _mountLxdListComplete()
 {
-    if [ -r ${LXD_MOUNT_DIR} ]; then
+    if [ -d "${LXD_MOUNT_DIR}" ] && [ -x "${LXD_MOUNT_DIR}" ]; then
         local cur=${COMP_WORDS[COMP_CWORD]}
-        COMPREPLY=( $(compgen -W "$(cd ${LXD_MOUNT_DIR} && ls -d */ | tr '/\n' ' ' && printf '\n' )" -- ${cur}) )
+        COMPREPLY=( $(compgen -W "$(cd ${LXD_MOUNT_DIR} && ls -d */ 2>/dev/null | tr '/\n' ' ' && printf '\n' )" -- ${cur}) )
     fi
 
 }
