@@ -196,8 +196,10 @@ lxd-create() {
 # Add read access for bash completion on the container directory
 lxd-bash-completion() {
   _checkRights || return 1
-  echo "Give read access to container path: ${LXD_SOURCE_DIR}/$1"
-  sudo chmod ugo+r "${LXD_SOURCE_DIR}/$1"
+  if ! [[ -r ${LXD_SOURCE_DIR}/$1 ]]; then
+    echo "Give read access to container path: ${LXD_SOURCE_DIR}/$1"
+    sudo chmod ugo+r "${LXD_SOURCE_DIR}/$1"
+  fi
 }
 
 _lxdListComplete() {
