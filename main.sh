@@ -12,6 +12,10 @@ PATH_SCRIPT=$(cd $PATH_SCRIPT && pwd)
 
 . ${PATH_SCRIPT}/config.sh
 
+# Define source directory to use based on the presence of incus package
+# If incus is installed, consider user is using it and set source directory to the incus provided path
+SOURCE_DIR=$(dpkg-query -W -f='${Status}' incus 2>/dev/null | grep -q "install ok installed" && echo "$INCUS_SOURCE_DIR" || echo "$LXD_SOURCE_DIR")
+
 # POSIX confirm
 _confirm() {
     echo -n $1 " ? [y/n]"
@@ -49,23 +53,23 @@ _checkBindfs() {
 
 # Get the UID and the GID of the current user in the container (or root by default)
 _getUidGidLxd() {
-    if [ -d "${LXD_SOURCE_DIR}/$1" ] && [ ! -x "${LXD_SOURCE_DIR}/$1" ]; then
+    if [ -d "${SOURCE_DIR}/$1" ] && [ ! -x "${SOURCE_DIR}/$1" ]; then
         if [ "${ASK_CHANGE_CONTAINER_RIGHTS}" = "true" ]; then
-            echo "The container path is not accessible (this is normal, if LXD is installed via snap): ${LXD_SOURCE_DIR}/$1"
-            _confirm "Do you wish to add access right (x) this directory (required to proceed)" sudo chmod go+x ${LXD_SOURCE_DIR}/$1
+            echo "The container path is not accessible (this is normal, if LXD is installed via snap): ${SOURCE_DIR}/$1"
+            _confirm "Do you wish to add access right (x) this directory (required to proceed)" sudo chmod go+x ${SOURCE_DIR}/$1
         else
-          echo "Give access to container path: ${LXD_SOURCE_DIR}/$1"
-          sudo chmod go+x ${LXD_SOURCE_DIR}/$1
+          echo "Give access to container path: ${SOURCE_DIR}/$1"
+          sudo chmod go+x ${SOURCE_DIR}/$1
         fi
     fi
 
-    if [ -d "${LXD_SOURCE_DIR}/$1/rootfs" ] && [ -x "${LXD_SOURCE_DIR}/$1/rootfs" ]; then
+    if [ -d "${SOURCE_DIR}/$1/rootfs" ] && [ -x "${SOURCE_DIR}/$1/rootfs" ]; then
         DEFAULT_USER="root"
         for mappingUser in "${MAPPING_USERS[@]}"; do
-            if [ "${mappingUser}" = "CONTAINER" ] && [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/$1" ]; then
+            if [ "${mappingUser}" = "CONTAINER" ] && [ -d "${SOURCE_DIR}/$1/rootfs/home/$1" ]; then
                 DEFAULT_USER=$1
                 break
-            elif [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/${mappingUser}" ]; then
+            elif [ -d "${SOURCE_DIR}/$1/rootfs/home/${mappingUser}" ]; then
                 DEFAULT_USER=$mappingUser
                 break
             fi
@@ -81,21 +85,21 @@ _getUidGidLxd() {
             MAPPING_USER=$INPUT_USER
         fi
 
-        if [ "${MAPPING_USER}" != 'root' ] && [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER}" ]; then
+        if [ "${MAPPING_USER}" != 'root' ] && [ -d "${SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER}" ]; then
             echo "The user $MAPPING_USER was found and will be used to make the uig/gid mapping."
-            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $3}'`
-            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $4}'`
-        elif [ "${MAPPING_USER}" = 'root' ] && [ -d "${LXD_SOURCE_DIR}/$1/rootfs/root" ]; then
+            UID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $4}'`
+        elif [ "${MAPPING_USER}" = 'root' ] && [ -d "${SOURCE_DIR}/$1/rootfs/root" ]; then
             echo "The root user will bed used to make the uig/gid mapping."
-            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $3}'`
-            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $4}'`
+            UID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/root | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/root | awk '{print $4}'`
         else
             echo "Unable found the user $MAPPING_USER in the container"
             return 1
         fi
         return 0
     else
-        echo "Unable to access to the rootfs of the container: ${LXD_SOURCE_DIR}/$1/rootfs" >&2
+        echo "Unable to access to the rootfs of the container: ${SOURCE_DIR}/$1/rootfs" >&2
         return 1
     fi
 }
@@ -123,7 +127,7 @@ lxd-bindfs-mount() {
         echo "The mount directory is not empty : $LXD_MOUNT_DIR/$1" >&2
         echo "Already mounted ?" >&2
     else
-        sudo bindfs --force-user=$2 --force-group=$3 --create-for-user=$4 --create-for-group=$5 ${LXD_SOURCE_DIR}/$1/rootfs ${LXD_MOUNT_DIR}/$1 && echo "Mount done (in ${LXD_MOUNT_DIR}/$1)"
+        sudo bindfs --force-user=$2 --force-group=$3 --create-for-user=$4 --create-for-group=$5 ${SOURCE_DIR}/$1/rootfs ${LXD_MOUNT_DIR}/$1 && echo "Mount done (in ${LXD_MOUNT_DIR}/$1)"
     fi
 }
 

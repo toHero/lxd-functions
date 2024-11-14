@@ -23,7 +23,8 @@ fi
 
 Copy the example of configration file `/path/to/lxd-functions/config.sh.example` to `/path/to/lxd-functions/config.sh` and edit it, specially check that :
 
- * `LXD_SOURCE_DIR` need to match with the path of LXD containers in your system
+ * If you are using LXD (generally < Ubuntu 24.04) `LXD_SOURCE_DIR` need to match with the path of LXD containers in your system
+ * If you are using INCUS (Ubuntu >= 24.04) `INCUS_SOURCE_DIR` need to match with the path of INCUS containers in your system
  * `LXD_MOUNT_DIR` it's where containers will be mounted. The default value is `/var/lxd`. It will be automatically created if you run the script.
 
 **No need to change an existing LXD container, this script use the LXD API without container modification !**
