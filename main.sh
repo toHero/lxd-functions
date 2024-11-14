@@ -15,6 +15,7 @@ PATH_SCRIPT=$(cd $PATH_SCRIPT && pwd)
 # Define source directory to use based on the presence of incus package
 # If incus is installed, consider user is using it and set source directory to the incus provided path
 SOURCE_DIR=$(dpkg-query -W -f='${Status}' incus 2>/dev/null | grep -q "install ok installed" && echo "$INCUS_SOURCE_DIR" || echo "$LXD_SOURCE_DIR")
+PACKAGE=$(dpkg-query -W -f='${Status}' incus 2>/dev/null | grep -q "install ok installed" && echo "incus" || echo "lxc")
 
 # POSIX confirm
 _confirm() {
@@ -137,12 +138,12 @@ lxd-stop() {
     if [ -z "$1" ]; then
         echo "lxd-stop <container name>" >&2
     else
-        if [ `lxc list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
-            if [ `lxc list --columns=s ^${1}$ | grep RUNNING | wc -l` -eq 1 ]; then
-                if lxc stop $1 --timeout 30; then
+        if [ `${PACKAGE} list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
+            if [ `${PACKAGE} list --columns=s ^${1}$ | grep RUNNING | wc -l` -eq 1 ]; then
+                if ${PACKAGE} stop $1 --timeout 30; then
                     echo "LXD $1 stopped"
                 else
-                    lxc stop $1 --force && echo "LXD $1 stopped, but forced!"
+                    ${PACKAGE} stop $1 --force && echo "LXD $1 stopped, but forced!"
                 fi
             fi
 
@@ -161,9 +162,9 @@ lxd-start() {
     if [ -z "$1" ]; then
         echo "lxd-start <container name>" >&2
     else
-        if [ `lxc list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
-            if [ `lxc list --columns=s ^${1}$ | grep STOPPED | wc -l` -eq 1 ]; then
-                lxc start $1 && echo "LXD $1 started"
+        if [ `${PACKAGE} list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
+            if [ `${PACKAGE} list --columns=s ^${1}$ | grep STOPPED | wc -l` -eq 1 ]; then
+                ${PACKAGE} start $1 && echo "LXD $1 started"
             fi
             MOUNT_RESULT=0
             if [ ! -d "${LXD_MOUNT_DIR}/$1" ]; then
@@ -187,12 +188,12 @@ lxd-create() {
     _checkRights || return 1
     if [ $# -ne 2 ]; then
         echo "lxd-create <image name> <container name>"
-        echo "To get the list of images availables : lxc image list <remote>"
+        echo "To get the list of images availables : ${PACKAGE} image list <remote>"
     else
         read -p "Do you wish to create the new container named $2 with the image $1 ? [Y/n] " yn
         case ${yn} in
             [Yy]* )
-                lxc launch $1 $2 && lxc exec $2 -- /usr/sbin/useradd $2 && lxc exec $2 -- /usr/sbin/passwd $2 && lxd-start $2 ;;
+                ${PACKAGE} launch $1 $2 && ${PACKAGE} exec $2 -- /usr/sbin/useradd $2 && ${PACKAGE} exec $2 -- /usr/sbin/passwd $2 && lxd-start $2 ;;
             * )
                 return ;;
         esac
@@ -203,7 +204,7 @@ _lxdListComplete() {
    local cur opts prev
    cur="${COMP_WORDS[COMP_CWORD]}"
    prev="${COMP_WORDS[COMP_CWORD-1]}"
-   opts="$(lxc list --format=csv --columns=n)"
+   opts="$(${PACKAGE} list --format=csv --columns=n)"
    if [ "${prev}" == "lxd-start" ] || [ "${prev}" == "lxd-bindfs-mount" ]; then
        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
    fi
