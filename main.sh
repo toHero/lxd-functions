@@ -14,8 +14,8 @@ PATH_SCRIPT=$(cd $PATH_SCRIPT && pwd)
 
 # Define source directory to use based on the presence of incus package
 # If incus is installed, consider user is using it and set source directory to the incus provided path
-SOURCE_DIR=$(dpkg-query -W -f='${Status}' incus 2>/dev/null | grep -q "install ok installed" && echo "$INCUS_SOURCE_DIR" || echo "$LXD_SOURCE_DIR")
 PACKAGE=$(dpkg-query -W -f='${Status}' incus 2>/dev/null | grep -q "install ok installed" && echo "incus" || echo "lxc")
+SOURCE_DIR=$([ "$PACKAGE" = "incus" ] && echo "$INCUS_SOURCE_DIR" || echo "$LXD_SOURCE_DIR")
 
 # POSIX confirm
 _confirm() {
@@ -222,7 +222,9 @@ _mountedLxdListComplete() {
         fi
     fi
 }
-complete -F _lxdListComplete lxd-start
-complete -F _mountedLxdListComplete lxd-stop
-complete -F _lxdListComplete lxd-bindfs-mount
-complete -F _mountedLxdListComplete lxd-bindfs-umount
+# complete -F _lxdListComplete lxd-start
+# complete -F _mountedLxdListComplete lxd-stop
+# complete -F _lxdListComplete lxd-bindfs-mount
+# complete -F _mountedLxdListComplete lxd-bindfs-umount
+
+echo "${SOURCE_DIR}"
