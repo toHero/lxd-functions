@@ -226,5 +226,3 @@ _mountedLxdListComplete() {
 # complete -F _mountedLxdListComplete lxd-stop
 # complete -F _lxdListComplete lxd-bindfs-mount
 # complete -F _mountedLxdListComplete lxd-bindfs-umount
-
-echo "${SOURCE_DIR}"
