@@ -12,6 +12,11 @@ PATH_SCRIPT=$(cd $PATH_SCRIPT && pwd)
 
 . ${PATH_SCRIPT}/config.sh
 
+# Define source directory to use based on the presence of incus package
+# If incus is installed, consider user is using it and set source directory to the incus provided path
+PACKAGE=$(dpkg-query -W -f='${Status}' incus 2>/dev/null | grep -q "install ok installed" && echo "incus" || echo "lxc")
+SOURCE_DIR=$([ "$PACKAGE" = "incus" ] && echo "$INCUS_SOURCE_DIR" || echo "$LXD_SOURCE_DIR")
+
 # POSIX confirm
 _confirm() {
     echo -n $1 " ? [y/n]"
@@ -49,23 +54,23 @@ _checkBindfs() {
 
 # Get the UID and the GID of the current user in the container (or root by default)
 _getUidGidLxd() {
-    if [ -d "${LXD_SOURCE_DIR}/$1" ] && [ ! -x "${LXD_SOURCE_DIR}/$1" ]; then
+    if [ -d "${SOURCE_DIR}/$1" ] && [ ! -x "${SOURCE_DIR}/$1" ]; then
         if [ "${ASK_CHANGE_CONTAINER_RIGHTS}" = "true" ]; then
-            echo "The container path is not accessible (this is normal, if LXD is installed via snap): ${LXD_SOURCE_DIR}/$1"
-            _confirm "Do you wish to add access right (x) this directory (required to proceed)" sudo chmod go+x ${LXD_SOURCE_DIR}/$1
+            echo "The container path is not accessible (this is normal, if LXD is installed via snap): ${SOURCE_DIR}/$1"
+            _confirm "Do you wish to add access right (x) this directory (required to proceed)" sudo chmod go+x ${SOURCE_DIR}/$1
         else
-          echo "Give access to container path: ${LXD_SOURCE_DIR}/$1"
-          sudo chmod go+x ${LXD_SOURCE_DIR}/$1
+          echo "Give access to container path: ${SOURCE_DIR}/$1"
+          sudo chmod go+x ${SOURCE_DIR}/$1
         fi
     fi
 
-    if [ -d "${LXD_SOURCE_DIR}/$1/rootfs" ] && [ -x "${LXD_SOURCE_DIR}/$1/rootfs" ]; then
+    if [ -d "${SOURCE_DIR}/$1/rootfs" ] && [ -x "${SOURCE_DIR}/$1/rootfs" ]; then
         DEFAULT_USER="root"
         for mappingUser in "${MAPPING_USERS[@]}"; do
-            if [ "${mappingUser}" = "CONTAINER" ] && [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/$1" ]; then
+            if [ "${mappingUser}" = "CONTAINER" ] && [ -d "${SOURCE_DIR}/$1/rootfs/home/$1" ]; then
                 DEFAULT_USER=$1
                 break
-            elif [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/${mappingUser}" ]; then
+            elif [ -d "${SOURCE_DIR}/$1/rootfs/home/${mappingUser}" ]; then
                 DEFAULT_USER=$mappingUser
                 break
             fi
@@ -81,21 +86,21 @@ _getUidGidLxd() {
             MAPPING_USER=$INPUT_USER
         fi
 
-        if [ "${MAPPING_USER}" != 'root' ] && [ -d "${LXD_SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER}" ]; then
+        if [ "${MAPPING_USER}" != 'root' ] && [ -d "${SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER}" ]; then
             echo "The user $MAPPING_USER was found and will be used to make the uig/gid mapping."
-            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $3}'`
-            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $4}'`
-        elif [ "${MAPPING_USER}" = 'root' ] && [ -d "${LXD_SOURCE_DIR}/$1/rootfs/root" ]; then
+            UID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/home/${MAPPING_USER} | awk '{print $4}'`
+        elif [ "${MAPPING_USER}" = 'root' ] && [ -d "${SOURCE_DIR}/$1/rootfs/root" ]; then
             echo "The root user will bed used to make the uig/gid mapping."
-            UID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $3}'`
-            GID_GUEST_MOUNT=`ls -ldn ${LXD_SOURCE_DIR}/$1/rootfs/root | awk '{print $4}'`
+            UID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/root | awk '{print $3}'`
+            GID_GUEST_MOUNT=`ls -ldn ${SOURCE_DIR}/$1/rootfs/root | awk '{print $4}'`
         else
             echo "Unable found the user $MAPPING_USER in the container"
             return 1
         fi
         return 0
     else
-        echo "Unable to access to the rootfs of the container: ${LXD_SOURCE_DIR}/$1/rootfs" >&2
+        echo "Unable to access to the rootfs of the container: ${SOURCE_DIR}/$1/rootfs" >&2
         return 1
     fi
 }
@@ -123,7 +128,7 @@ lxd-bindfs-mount() {
         echo "The mount directory is not empty : $LXD_MOUNT_DIR/$1" >&2
         echo "Already mounted ?" >&2
     else
-        sudo bindfs --force-user=$2 --force-group=$3 --create-for-user=$4 --create-for-group=$5 ${LXD_SOURCE_DIR}/$1/rootfs ${LXD_MOUNT_DIR}/$1 && echo "Mount done (in ${LXD_MOUNT_DIR}/$1)"
+        sudo bindfs --force-user=$2 --force-group=$3 --create-for-user=$4 --create-for-group=$5 ${SOURCE_DIR}/$1/rootfs ${LXD_MOUNT_DIR}/$1 && echo "Mount done (in ${LXD_MOUNT_DIR}/$1)"
     fi
 }
 
@@ -133,12 +138,12 @@ lxd-stop() {
     if [ -z "$1" ]; then
         echo "lxd-stop <container name>" >&2
     else
-        if [ `lxc list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
-            if [ `lxc list --columns=s ^${1}$ | grep RUNNING | wc -l` -eq 1 ]; then
-                if lxc stop $1 --timeout 30; then
+        if [ `${PACKAGE} list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
+            if [ `${PACKAGE} list --columns=s ^${1}$ | grep RUNNING | wc -l` -eq 1 ]; then
+                if ${PACKAGE} stop $1 --timeout 30; then
                     echo "LXD $1 stopped"
                 else
-                    lxc stop $1 --force && echo "LXD $1 stopped, but forced!"
+                    ${PACKAGE} stop $1 --force && echo "LXD $1 stopped, but forced!"
                 fi
             fi
 
@@ -157,9 +162,9 @@ lxd-start() {
     if [ -z "$1" ]; then
         echo "lxd-start <container name>" >&2
     else
-        if [ `lxc list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
-            if [ `lxc list --columns=s ^${1}$ | grep STOPPED | wc -l` -eq 1 ]; then
-                lxc start $1 && echo "LXD $1 started"
+        if [ `${PACKAGE} list --columns=n ^${1}$ | wc -l` -eq 5 ]; then
+            if [ `${PACKAGE} list --columns=s ^${1}$ | grep STOPPED | wc -l` -eq 1 ]; then
+                ${PACKAGE} start $1 && echo "LXD $1 started"
             fi
             MOUNT_RESULT=0
             if [ ! -d "${LXD_MOUNT_DIR}/$1" ]; then
@@ -183,12 +188,12 @@ lxd-create() {
     _checkRights || return 1
     if [ $# -ne 2 ]; then
         echo "lxd-create <image name> <container name>"
-        echo "To get the list of images availables : lxc image list <remote>"
+        echo "To get the list of images availables : ${PACKAGE} image list <remote>"
     else
         read -p "Do you wish to create the new container named $2 with the image $1 ? [Y/n] " yn
         case ${yn} in
             [Yy]* )
-                lxc launch $1 $2 && lxc exec $2 -- /usr/sbin/useradd $2 && lxc exec $2 -- /usr/sbin/passwd $2 && lxd-start $2 ;;
+                ${PACKAGE} launch $1 $2 && ${PACKAGE} exec $2 -- /usr/sbin/useradd $2 && ${PACKAGE} exec $2 -- /usr/sbin/passwd $2 && lxd-start $2 ;;
             * )
                 return ;;
         esac
@@ -199,7 +204,7 @@ _lxdListComplete() {
    local cur opts prev
    cur="${COMP_WORDS[COMP_CWORD]}"
    prev="${COMP_WORDS[COMP_CWORD-1]}"
-   opts="$(lxc list --format=csv --columns=n)"
+   opts="$(${PACKAGE} list --format=csv --columns=n)"
    if [ "${prev}" == "lxd-start" ] || [ "${prev}" == "lxd-bindfs-mount" ]; then
        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
    fi
@@ -217,7 +222,7 @@ _mountedLxdListComplete() {
         fi
     fi
 }
-complete -F _lxdListComplete lxd-start
-complete -F _mountedLxdListComplete lxd-stop
-complete -F _lxdListComplete lxd-bindfs-mount
-complete -F _mountedLxdListComplete lxd-bindfs-umount
+# complete -F _lxdListComplete lxd-start
+# complete -F _mountedLxdListComplete lxd-stop
+# complete -F _lxdListComplete lxd-bindfs-mount
+# complete -F _mountedLxdListComplete lxd-bindfs-umount
